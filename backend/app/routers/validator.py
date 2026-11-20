@@ -23,6 +23,39 @@ def export_entries() -> dict[str, Any]:
     return {"module": "validator", "total": total, "items": items}
 
 
+@router.get("/detail")
+def validation_detail(
+    采样站: str = Query(..., description="采样站"),
+    采集批次: str = Query(..., description="采集批次"),
+) -> dict[str, Any]:
+    """校验明细：逐行给出标准字段值、实际使用的原字段名、冲突与处置单。"""
+    detail, message = service.validation_detail(采样站, 采集批次)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=message)
+    return detail
+
+
+@router.get("/disposals")
+def list_disposals(
+    采样站: str | None = Query(default=None, description="按采样站过滤"),
+    采集批次: str | None = Query(default=None, description="按采集批次过滤"),
+) -> dict[str, Any]:
+    """查询处置单：处置单的有无及依据都能从对应原始行还原。"""
+    items = service.list_disposals(采样站, 采集批次)
+    return {"total": len(items), "items": items}
+
+
+@router.post("/validate", response_model=ActionResult)
+def validate_batch(payload: EntryPayload) -> ActionResult:
+    """读取解析结果执行批次校验：超阈值开处置单，冲突行标记尚欠核对。"""
+    station = str(payload.values.get("采样站") or "")
+    batch = str(payload.values.get("采集批次") or "")
+    summary, message = service.validate_batch(station, batch)
+    if summary is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=summary)
+
+
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     request: Request,

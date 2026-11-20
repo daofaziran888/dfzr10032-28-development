@@ -7,6 +7,7 @@
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记解析配置</button>
+        <button class="btn" type="button" @click="openParse">运行批次解析</button>
         <button class="btn" type="button" @click="exportRows">导出格式解析器清单</button>
       </div>
     </header>
@@ -60,6 +61,89 @@
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
 
+    <section class="panel">
+      <header class="panel-head">
+        <h3>批次解析结果（按采集字段别名映射写出标准字段）</h3>
+      </header>
+      <form class="filter-bar" @submit.prevent="loadResults">
+        <label class="filter-item">
+          <span>采样站</span>
+          <input v-model="resultFilter.采样站" placeholder="如：河口站" />
+        </label>
+        <label class="filter-item">
+          <span>采集批次</span>
+          <input v-model="resultFilter.采集批次" placeholder="如：BATCH-2026-1101" />
+        </label>
+        <button class="btn" type="submit">查询解析结果</button>
+        <button class="btn ghost" type="button" @click="loadSamples">查看原始样本</button>
+      </form>
+      <p v-if="parseMessage" class="panel-note">{{ parseMessage }}</p>
+      <table v-if="resultRows.length" class="data-table">
+        <thead>
+          <tr>
+            <th>行号</th>
+            <th>标准字段值</th>
+            <th>实际使用原字段名</th>
+            <th>候选来源冲突</th>
+            <th>核对状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in resultRows" :key="String(row.id)" :class="{ 'row-warn': row['核对状态'] === '待核对' }">
+            <td>{{ row['行号'] }}</td>
+            <td>{{ formatValues(row['标准字段值']) }}</td>
+            <td>{{ formatSources(row['字段来源']) }}</td>
+            <td>{{ formatConflicts(row['冲突']) || '—' }}</td>
+            <td>{{ row['核对状态'] }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="empty-state">暂无解析结果，可先运行批次解析</p>
+      <table v-if="sampleRows.length" class="data-table">
+        <thead>
+          <tr>
+            <th>行号</th>
+            <th>表头</th>
+            <th>原始读数</th>
+            <th>采样时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in sampleRows" :key="String(row.id)">
+            <td>{{ row['行号'] }}</td>
+            <td>{{ (row['表头'] ?? []).join('、') }}</td>
+            <td>{{ formatValues(row['读数']) }}</td>
+            <td>{{ row['采样时间'] }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <Teleport to="body">
+      <div v-if="showParseModal" class="modal-overlay" @click.self="showParseModal = false">
+        <div class="modal-card">
+          <header class="modal-head">
+            <h3>运行批次解析</h3>
+            <button class="btn ghost" type="button" @click="showParseModal = false">&times;</button>
+          </header>
+          <form class="modal-body" @submit.prevent="submitParse">
+            <label class="modal-field">
+              <span>采样站</span>
+              <input v-model="parseForm.采样站" placeholder="如：河口站" required />
+            </label>
+            <label class="modal-field">
+              <span>采集批次</span>
+              <input v-model="parseForm.采集批次" placeholder="如：BATCH-2026-1101" required />
+            </label>
+            <footer class="modal-foot">
+              <button class="btn" type="button" @click="showParseModal = false">取消</button>
+              <button class="btn primary" type="submit">开始解析</button>
+            </footer>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
     <Teleport to="body">
       <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
         <div class="modal-card">
@@ -88,7 +172,7 @@ import { onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
 
-type Row = Record<string, string | number | null>
+type Row = Record<string, any>
 
 const ENDPOINT = '/api/parser'
 const columns = ["解析编号", "输入格式", "输出格式", "字段映射", "类型转换", "空值处理", "异常策略", "解析状态"]
@@ -103,6 +187,89 @@ const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
 const showCreateModal = ref(false)
 const createFields = ref<Record<string, string>>({})
+const showParseModal = ref(false)
+const parseForm = ref<Record<string, string>>({ 采样站: '', 采集批次: '' })
+const resultFilter = ref<Record<string, string>>({ 采样站: '', 采集批次: '' })
+const resultRows = ref<Row[]>([])
+const sampleRows = ref<Row[]>([])
+const parseMessage = ref('')
+
+function formatValues(values: Record<string, unknown> | undefined): string {
+  return Object.entries(values ?? {}).map(([key, val]) => `${key}=${String(val)}`).join('，')
+}
+
+function formatSources(sources: Record<string, unknown> | undefined): string {
+  return Object.entries(sources ?? {}).map(([key, val]) => `${key}←${String(val)}`).join('，')
+}
+
+function formatConflicts(conflicts: Array<Record<string, unknown>> | undefined): string {
+  return (conflicts ?? [])
+    .map((item) => `${String(item['标准字段'])}：${String(item['冲突来源'])}=${String(item['冲突值'])} ≠ ${String(item['已确认来源'])}=${String(item['已确认值'])}`)
+    .join('；')
+}
+
+function openParse() {
+  errorMessage.value = ''
+  parseForm.value = { 采样站: '', 采集批次: '' }
+  showParseModal.value = true
+}
+
+async function submitParse() {
+  errorMessage.value = ''
+  try {
+    const response = await request(`${ENDPOINT}/parse`, {
+      method: 'POST',
+      body: JSON.stringify({ values: parseForm.value }),
+    })
+    const data = await response.json()
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || '批次解析失败')
+    }
+    parseMessage.value = data.message
+    resultFilter.value = { ...parseForm.value }
+    showParseModal.value = false
+    await loadResults()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '批次解析失败'
+  }
+}
+
+async function loadResults() {
+  errorMessage.value = ''
+  sampleRows.value = []
+  const query = new URLSearchParams({
+    采样站: resultFilter.value.采样站 || '',
+    采集批次: resultFilter.value.采集批次 || '',
+  }).toString()
+  try {
+    const response = await request(`${ENDPOINT}/results?${query}`)
+    if (!response.ok) {
+      throw new Error('解析结果读取失败')
+    }
+    const payload = await response.json()
+    resultRows.value = payload.items ?? []
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '解析结果读取失败'
+  }
+}
+
+async function loadSamples() {
+  errorMessage.value = ''
+  const query = new URLSearchParams({
+    采样站: resultFilter.value.采样站 || '',
+    采集批次: resultFilter.value.采集批次 || '',
+  }).toString()
+  try {
+    const response = await request(`${ENDPOINT}/samples?${query}`)
+    if (!response.ok) {
+      throw new Error('原始样本读取失败')
+    }
+    const payload = await response.json()
+    sampleRows.value = payload.items ?? []
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '原始样本读取失败'
+  }
+}
 
 function updateStats() {
   const data = rows.value

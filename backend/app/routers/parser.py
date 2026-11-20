@@ -23,6 +23,37 @@ def export_entries() -> dict[str, Any]:
     return {"module": "parser", "total": total, "items": items}
 
 
+@router.get("/results")
+def list_results(
+    采样站: str | None = Query(default=None, description="按采样站过滤"),
+    采集批次: str | None = Query(default=None, description="按采集批次过滤"),
+) -> dict[str, Any]:
+    """查询批次解析结果：标准字段值与实际使用的原字段名一并返回。"""
+    items = service.list_results(采样站, 采集批次)
+    return {"total": len(items), "items": items}
+
+
+@router.get("/samples")
+def list_samples(
+    采样站: str | None = Query(default=None, description="按采样站过滤"),
+    采集批次: str | None = Query(default=None, description="按采集批次过滤"),
+) -> dict[str, Any]:
+    """查询传感器原始样本：新表头的原值在这里始终可查。"""
+    items = service.list_samples(采样站, 采集批次)
+    return {"total": len(items), "items": items}
+
+
+@router.post("/parse", response_model=ActionResult)
+def parse_batch(payload: EntryPayload) -> ActionResult:
+    """按采集字段别名映射数据集解析一个采集批次，写出标准字段。"""
+    station = str(payload.values.get("采样站") or "")
+    batch = str(payload.values.get("采集批次") or "")
+    summary, message = service.parse_batch(station, batch)
+    if summary is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=summary)
+
+
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     request: Request,

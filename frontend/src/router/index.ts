@@ -8,6 +8,7 @@ const Incremental = () => import('@/views/incremental/index.vue')
 const RobotTask = () => import('@/views/robot_task/index.vue')
 const Ingestion = () => import('@/views/ingestion/index.vue')
 const Parser = () => import('@/views/parser/index.vue')
+const FieldAlias = () => import('@/views/field_alias/index.vue')
 const Validator = () => import('@/views/validator/index.vue')
 const Dedup = () => import('@/views/dedup/index.vue')
 const Schedule = () => import('@/views/schedule/index.vue')
@@ -30,6 +31,7 @@ const router = createRouter({
     { path: '/robot_task', name: 'robot_task', component: RobotTask },
     { path: '/ingestion', name: 'ingestion', component: Ingestion },
     { path: '/parser', name: 'parser', component: Parser },
+    { path: '/field_alias', name: 'field_alias', component: FieldAlias },
     { path: '/validator', name: 'validator', component: Validator },
     { path: '/dedup', name: 'dedup', component: Dedup },
     { path: '/schedule', name: 'schedule', component: Schedule },

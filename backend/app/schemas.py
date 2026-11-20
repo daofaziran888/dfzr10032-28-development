@@ -125,6 +125,17 @@ class ValidatorEntry(BaseModel):
     field_6: str | None = None  # 阻断级别
     field_7: str | None = None  # 规则状态
 
+class FieldAliasEntry(BaseModel):
+    """别名映射明细结构。"""
+
+    field_0: str | None = None  # 映射编号
+    field_1: str | None = None  # 标准字段
+    field_2: str | None = None  # 来源名称
+    field_3: str | None = None  # 采样站
+    field_4: str | None = None  # 有效批次
+    field_5: str | None = None  # 核对证据
+    field_6: str | None = None  # 核对状态
+
 class DedupEntry(BaseModel):
     """去重策略明细结构。"""
 
